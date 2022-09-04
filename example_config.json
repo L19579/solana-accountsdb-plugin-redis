@@ -1,0 +1,18 @@
+{
+  "libpath": "shared_oject.so",
+  "redis_db_credentials": {
+    "username": "solana",
+    "password": "password",
+    "host": "127.0.0.1",
+    "port": "6379",
+    "database": "geyser"
+  },
+  "account_data_notifications_enabled": true,
+  "transaction_nofications_enabled": false,
+  "accounts": [
+    "CURVGoZn8zycx6FXwwevgBTB2gVvdbGTEpvMJDbgs2t4",
+    "9pZ2QkoHqEUt16AFttkv1xrVZvVBDxg5d5cJ4hy7zJQr",
+  ],
+  "preload_targeted_accounts": true,
+
+}

@@ -1,0 +1,18 @@
+[package]
+name = "solana-account-plugin-redis"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+log = "0.4.17"
+bs58 = "0.4.0"
+redis = "0.21.6"
+anyhow = "1.0.63"
+serde_json = "*" # target exact
+serde = { version = "1.0.144", features = ["derive"] }
+solana-sdk = "1.10.35"
+solana-transaction-status = "1.10.35"
+solana-geyser-plugin-interface = "1.10.35"
