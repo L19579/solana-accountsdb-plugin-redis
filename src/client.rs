@@ -5,7 +5,10 @@ use {
         Commands,
     },
     anyhow::Result,
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{
+        pubkey::Pubkey,
+        message::SanitizedMessage,
+    },
     crate::{
         config::RedisDbCredentials,
         geyser_plugin_interface::{
@@ -16,6 +19,14 @@ use {
         },
     },
 };
+
+pub enum Form{
+    B(bool),
+    I_64(i64),
+    U_64(u64),
+    Text(String),
+    Bin(Vec<u8>),
+}
 
 #[derive(Clone, Debug)]
 pub struct RedisClient{
@@ -35,27 +46,71 @@ impl RedisClient{
         })
     }
 
-    pub fn account_event(&self, slot: u64, account: &ReplicaAccountInfo) -> Result<()>{
+    pub fn account_event(&mut self, slot: u64, account: &ReplicaAccountInfo) -> Result<()>{
         let key = format!("account.{}", Pubkey::new(account.pubkey));
-        let value = format!(
-        r#"{{"lamports": {}, "owner": "{}", "executable": "{}", "rent_epoch": {}, "data": {:?}, "slot": {}, "write_version": {} }}"#,
-            account.lamports,
-            Pubkey::new(account.owner),
-            account.executable,
-            account.rent_epoch,
-            account.data,
-            slot,
-            account.write_version,
-        ); 
-        // -- expensive/slow call; use pointer + error handling req
-        let _ : () = self.client.get_connection().unwrap().set(&key, &value)?;
+        redis::cmd("HSET").arg(&key)
+            .arg("lamports").arg(account.lamports)
+            .arg("owner").arg(Pubkey::new(account.owner).to_string())
+            .arg("executable").arg(account.executable)
+            .arg("rent_epoch").arg(account.rent_epoch)
+            .arg("data").arg(account.data)
+            .arg("write_version").arg(account.write_version)
+            .arg("slot").arg(slot)
+            .execute(&mut self.client.get_connection()?);
         Ok(())
     }
 
-    pub fn transaction_event(&self, transaction: &ReplicaTransactionInfo) -> Result<()>{
-        let key = format!("transaction.{}", transaction.signature);
-        let value = format!(r#"{{"is_vote": {}, "tra"}}"#)  // -- cont'd sanitized txs needed.
+    pub fn transaction_event(&self, tx_event: &ReplicaTransactionInfo) -> Result<()>{
+        let mut connection = self.client.get_connection()?;
+        let key = format!("transaction.{}", tx_event.signature);
+        let mut db_cmd = redis::Cmd::new();
+        db_cmd.arg("HSET").arg(&key);
+        db_cmd.arg("is_vote").arg(tx_event.is_vote);
+       
+        let tx = tx_event.transaction;
+        db_cmd.arg("message_hash").arg(tx.message_hash().to_string());
+        match tx.message(){
+            SanitizedMessage::Legacy(message) => {
+
+                // message header
+                db_cmd.arg("message_header.num_required_signatures")
+                    .arg(message.header.num_required_signatures)
+                    .arg("message_header.num_readonly_signed_accounts")
+                    .arg(message.header.num_readonly_signed_accounts)
+                    .arg("message_header.num_readonly_unsigned_accounts")
+                    .arg(message.header.num_readonly_unsigned_accounts);
+
+                // message pubkeys
+                let mut i_message_account = 0u8;
+                message.account_keys.iter().for_each(|account_key|{
+                    db_cmd.arg(&format!("message.account.index_{}", i_message_account)) 
+                        .arg(account_key.to_string());
+                    i_message_account += 1;
+                });
+
+                // recent blockhash used for message
+                db_cmd.arg("message.recent_blockhash")
+                    .arg(message.recent_blockhash.to_string());
+
+                // message instructions and data
+                let mut i_message_instruction = 0u8;
+                message.instructions.iter().for_each(|instruction|{
+                    let mut field_prefix = format!("message.instructions.index_{}", i_message_instruction);
+                    db_cmd.arg(&format!("{}.program_id_index", field_prefix))
+                        .arg(instruction.program_id_index)
+                        .arg(&format!("{}.account_indices", field_prefix))
+                        .arg(&instruction.accounts)
+                        .arg(&format!("{}.data", field_prefix))
+                        .arg(&instruction.data);
+                    i_message_instruction += 1;
+                });
+            },
+            SanitizedMessage::V0(message) => {
+                // --  
+            },
+        };
         
+        db_cmd.execute(&mut connection);
         Ok(())
     }
 

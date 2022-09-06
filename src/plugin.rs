@@ -113,6 +113,7 @@ impl GeyserPlugin for GeyserRedisPlugin{
         transaction: ReplicaTransactionInfoVersions<'_>,
         slot: u64
     ) -> GeyserResult<()> {
+        // add ignore vote here.
         //--
         Ok(())
     }
