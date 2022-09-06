@@ -20,10 +20,11 @@ pub struct RedisDbCredentials{
 #[derive(Deserialize, Clone, Debug)]
 pub struct GeyserConfig{
     pub redis_db_credentials: RedisDbCredentials,
-    pub account_data_notifications_enabled: bool,
-    pub transaction_data_notifications_enabled: bool,
-    pub accounts: Vec<String>,
-    pub preload_targeted_accounts: bool,
+    pub account_data_notifications_enabled: Option<bool>,
+    pub transaction_data_notifications_enabled: Option<bool>,
+    pub ignore_system_accounts: Option<bool>,
+    pub ignore_vote_transactions: Option<bool>,
+    pub accounts: Option<Vec<String>>,
 }
 
 impl GeyserConfig {

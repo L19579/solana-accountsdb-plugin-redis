@@ -20,25 +20,17 @@ use {
     },
 };
 
-pub enum Form{
-    B(bool),
-    I_64(i64),
-    U_64(u64),
-    Text(String),
-    Bin(Vec<u8>),
-}
-
 #[derive(Clone, Debug)]
 pub struct RedisClient{
-    client: redis::Client,
+    pub client: redis::Client,
 }
 
 impl RedisClient{
-    pub fn new(creds: &RedisDbCredentials) -> Result<Self>{ // This needs to change to
+    pub fn new(creds: &RedisDbCredentials) -> Result<Self>{ 
         let login = format!("redis:://{}:{}@{}:{}/{}",
             creds.username, creds.password, creds.host,
             creds.port, creds.database);
-        let client = redis::Client::open(login)?;
+        let client = redis::Client::open(login.clone())?;
         
         info!("Connected to redis server: {}", login);
         Ok(Self{
@@ -60,11 +52,12 @@ impl RedisClient{
         Ok(())
     }
 
-    pub fn transaction_event(&self, tx_event: &ReplicaTransactionInfo) -> Result<()>{
+    pub fn transaction_event(&self, slot: u64, tx_event: &ReplicaTransactionInfo) -> Result<()>{
         let mut connection = self.client.get_connection()?;
         let key = format!("transaction.{}", tx_event.signature);
         let mut db_cmd = redis::Cmd::new();
         db_cmd.arg("HSET").arg(&key);
+        db_cmd.arg("slot").arg(slot);
         db_cmd.arg("is_vote").arg(tx_event.is_vote);
        
         let tx = tx_event.transaction;
@@ -73,11 +66,11 @@ impl RedisClient{
             SanitizedMessage::Legacy(message) => {
 
                 // message header
-                db_cmd.arg("message_header.num_required_signatures")
+                db_cmd.arg("message.header.num_required_signatures")
                     .arg(message.header.num_required_signatures)
-                    .arg("message_header.num_readonly_signed_accounts")
+                    .arg("message.header.num_readonly_signed_accounts")
                     .arg(message.header.num_readonly_signed_accounts)
-                    .arg("message_header.num_readonly_unsigned_accounts")
+                    .arg("message.header.num_readonly_unsigned_accounts")
                     .arg(message.header.num_readonly_unsigned_accounts);
 
                 // message pubkeys
@@ -106,7 +99,7 @@ impl RedisClient{
                 });
             },
             SanitizedMessage::V0(message) => {
-                // --  
+                // TODO: required for 1.11.x
             },
         };
         
@@ -114,8 +107,23 @@ impl RedisClient{
         Ok(())
     }
 
-    pub fn slot_status_event(&self, slot: &SlotStatus) -> Result<()>{
-    
+    pub fn slot_status_event(
+        &self, slot: u64, 
+        parent: Option<u64>, 
+        status: SlotStatus) 
+    -> Result<()>{
+        let mut connection = self.client.get_connection()?;
+        let key = format!("slot.{}", slot);
+        let mut db_cmd = redis::Cmd::new();
+        
+        if parent.is_some(){ // -- clean up
+            db_cmd.arg("parent")
+                .arg(parent.unwrap());
+        } 
+        db_cmd.arg("status")
+            .arg(status.as_str());
+
+        db_cmd.execute(&mut connection);
         Ok(())
     }
 

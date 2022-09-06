@@ -23,13 +23,12 @@ use {
     },
 };
 
+// as_refs are annoying, review need for Options
 #[derive(Debug, Clone)]
 pub struct GeyserRedisPlugin{
-    config: Option<GeyserConfig>,
-    redis_client: Option<RedisClient>,
-    target_accounts: Vec<[u8; 32]>,
-    account_notifications: bool,
-    transaction_notifications: bool,
+    pub config: Option<GeyserConfig>,
+    pub redis_client: Option<RedisClient>,
+    pub target_accounts: Vec<[u8; 32]>,
 }
 
 impl GeyserPlugin for GeyserRedisPlugin{
@@ -47,7 +46,6 @@ impl GeyserPlugin for GeyserRedisPlugin{
                 });
             }
         };
-        self.config = Some(config);
         self.redis_client = Some(match RedisClient::new(&config.redis_db_credentials){
             Ok(r_c) => r_c,
             Err(e) => {
@@ -56,18 +54,22 @@ impl GeyserPlugin for GeyserRedisPlugin{
                 });
             }
         });
-        self.account_notifications = config.account_data_notifications_enabled;
-        self.transaction_notifications = config.transaction_data_notifications_enabled;
 
         // faster to compare bytes
-        config.accounts.iter().for_each(|account|{
-            let mut acc_bytes = [0u8; 32];
-            acc_bytes.copy_from_slice(&bs58::decode(account)
-                                      .into_vec()
-                                      .unwrap()[0..32]);
-            self.target_accounts.push(acc_bytes);
-        });
+        match config.accounts.as_ref() {
+            Some(accounts) => {
+                accounts.iter().for_each(|account|{
+                    let mut acc_bytes = [0u8; 32];
+                    acc_bytes.copy_from_slice(&bs58::decode(account)
+                                              .into_vec()
+                                              .unwrap()[0..32]);
+                    self.target_accounts.push(acc_bytes);
+                });
+            },
+            None => ()
+        }
 
+        self.config = Some(config);
         Ok(())
     }
     
@@ -81,16 +83,48 @@ impl GeyserPlugin for GeyserRedisPlugin{
         slot: u64,
         is_startup: bool
     ) -> GeyserResult<()> {
+        if is_startup{
+            return Ok(());
+        }
+
         let account = match account{
             ReplicaAccountInfoVersions::V0_0_1(a) => a, 
+            //V0_0_2 not supported on 1.10.x
+            _ => {
+                return Ok(());
+            }
         };
 
         self.target_accounts.iter().for_each(|target_account|{
             if target_account == account.pubkey {
-                self.redis_client.unwrap().account_event(&account); // -- err handling req
+                self.redis_client.as_mut().unwrap() 
+                    .account_event(slot, &account); // -- err handling req
             } 
         });
         Ok(()) 
+    }
+    
+    fn notify_transaction(
+        &mut self,
+        transaction: ReplicaTransactionInfoVersions<'_>,
+        slot: u64
+    ) -> GeyserResult<()> {
+        let config = self.config.as_ref().unwrap();
+        let transaction = match transaction {
+            ReplicaTransactionInfoVersions::V0_0_1(tx) => {
+                if config.ignore_vote_transactions
+                    .unwrap_or(true) && tx.is_vote{
+                        return Ok(());
+                    }
+                tx
+            },
+            _ => {
+                return Ok(());
+            }
+        };
+        self.redis_client.as_ref().unwrap()
+            .transaction_event(slot, &transaction); // -- err handling req
+        Ok(())
     }
     
     fn update_slot_status(
@@ -99,22 +133,8 @@ impl GeyserPlugin for GeyserRedisPlugin{
         parent: Option<u64>,
         status: SlotStatus
     ) -> GeyserResult<()> {
-        // --
-        Ok(())
-    }
-
-    fn notify_end_of_startup(&mut self) -> GeyserResult<()> {
-        info!("End of Geyser Plugin Startup");
-        Ok(())
-    }
-
-    fn notify_transaction(
-        &mut self,
-        transaction: ReplicaTransactionInfoVersions<'_>,
-        slot: u64
-    ) -> GeyserResult<()> {
-        // add ignore vote here.
-        //--
+        self.redis_client.as_mut().unwrap()
+            .slot_status_event(slot, parent, status); // -- err handling req
         Ok(())
     }
 
@@ -125,11 +145,22 @@ impl GeyserPlugin for GeyserRedisPlugin{
         // -- 
         Ok(())
     }
-    fn account_data_notifications_enabled(&self) -> bool {
-        self.account_notifications
+
+    fn notify_end_of_startup(&mut self) -> GeyserResult<()> {
+        info!("Geyser Plugin startup loaded");
+        Ok(())
     }
+
+    fn account_data_notifications_enabled(&self) -> bool {
+        self.config.as_ref().unwrap()
+            .account_data_notifications_enabled
+            .unwrap_or(true)
+    }
+
     fn transaction_notifications_enabled(&self) -> bool {
-        self.transaction_notifications
+        self.config.as_ref().unwrap()
+            .transaction_data_notifications_enabled
+            .unwrap_or(false)
     }
     
 }

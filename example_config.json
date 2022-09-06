@@ -9,10 +9,10 @@
   },
   "account_data_notifications_enabled": true,
   "transaction_nofications_enabled": false,
+  "ignore_vote_transactions": true,
+  "ignore_system_accounts": true,
   "accounts": [
     "CURVGoZn8zycx6FXwwevgBTB2gVvdbGTEpvMJDbgs2t4",
     "9pZ2QkoHqEUt16AFttkv1xrVZvVBDxg5d5cJ4hy7zJQr",
   ],
-  "preload_targeted_accounts": true,
-
 }
