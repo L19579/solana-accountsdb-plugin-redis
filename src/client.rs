@@ -113,8 +113,10 @@ impl RedisClient{
         status: SlotStatus) 
     -> Result<()>{
         let mut connection = self.client.get_connection()?;
-        let key = format!("slot.{}", slot);
         let mut db_cmd = redis::Cmd::new();
+
+        let key = format!("slot.{}", slot);
+        db_cmd.arg("HSET").arg(&key);
         
         if parent.is_some(){ // -- clean up
             db_cmd.arg("parent")
@@ -127,7 +129,54 @@ impl RedisClient{
         Ok(())
     }
 
-    pub fn block_meta_data_event() -> Result<()>{
+    pub fn block_metadata_event(&self, blockinfo: &ReplicaBlockInfo) -> Result<()>{
+        let mut connection = self.client.get_connection()?;
+        let mut db_cmd = redis::Cmd::new();
+
+        let key = format!("block.{}", blockinfo.slot); 
+        db_cmd.arg("HSET").arg(&key);
+
+        db_cmd.arg("blockhash")
+            .arg(blockinfo.blockhash);
+       
+        let mut reward_i = 0u8;
+        blockinfo.rewards.iter().for_each(|reward|{
+            let mut reward_prefix = format!("reward.index_{}.", reward_i);
+            db_cmd.arg(format!("{}.pubkey", reward_prefix))
+                .arg(&reward.pubkey)
+                .arg(format!("{}.lamports", reward_prefix))
+                .arg(reward.lamports)
+                .arg(format!("{}.post_balance", reward_prefix))
+                .arg(reward.post_balance);
+            match reward.reward_type{
+                Some(r_type) => {
+                    db_cmd.arg(format!("{}.reward_type", reward_prefix))
+                        .arg(r_type.to_string());
+                },
+                None => (),
+            };
+            db_cmd.arg(format!("{}.commision", reward_prefix))
+                .arg(reward.commission.unwrap_or(0)); // -- zero or non?
+            reward_i += 1; 
+        });
+        
+        match blockinfo.block_time {
+            Some(time) => {
+                db_cmd.arg("block_time")
+                    .arg(time); 
+            },
+            None => ()
+        };
+
+        match blockinfo.block_height{
+            Some(height) => {
+            db_cmd.arg("block_height")
+                .arg(height);
+            },
+            None => (),
+        };
+
+        db_cmd.execute(&mut connection);
         
         Ok(())
     }

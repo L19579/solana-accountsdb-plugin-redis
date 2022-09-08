@@ -142,7 +142,12 @@ impl GeyserPlugin for GeyserRedisPlugin{
         &mut self,
         blockinfo: ReplicaBlockInfoVersions<'_>
     ) -> GeyserResult<()> {
-        // -- 
+        let blockinfo = match blockinfo {
+            ReplicaBlockInfoVersions::V0_0_1(b) => b, 
+        };
+
+        self.redis_client.as_mut().unwrap()
+            .block_metadata_event(blockinfo); // --
         Ok(())
     }
 
